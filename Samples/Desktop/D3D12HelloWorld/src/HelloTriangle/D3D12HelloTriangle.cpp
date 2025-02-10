@@ -19,6 +19,9 @@ D3D12HelloTriangle::D3D12HelloTriangle(UINT width, UINT height, std::wstring nam
     m_scissorRect(0, 0, static_cast<LONG>(width), static_cast<LONG>(height)),
     m_rtvDescriptorSize(0)
 {
+    m_maxVertices = 100;
+	m_width = width;
+	m_height = height;
 }
 
 void D3D12HelloTriangle::OnInit()
@@ -195,42 +198,57 @@ void D3D12HelloTriangle::LoadAssets()
     // to record yet. The main loop expects it to be closed, so close it now.
     ThrowIfFailed(m_commandList->Close());
 
+
+
     // Create the vertex buffer.
     {
         // Define the geometry for a triangle.
-        Vertex triangleVertices[] =
-        {
-            { { 0.0f, 0.25f * m_aspectRatio, 0.0f }, { 1.0f, 0.0f, 0.0f, 1.0f } },
-            { { 0.25f, -0.25f * m_aspectRatio, 0.0f }, { 0.0f, 1.0f, 0.0f, 1.0f } },
-            { { -0.25f, -0.25f * m_aspectRatio, 0.0f }, { 0.0f, 0.0f, 1.0f, 1.0f } }
+        XMFLOAT4 colors[] = {
+            {1.,0.,0.,1.},
+            {1.,1.,1.,1.}
         };
+        std::string fileNames[] = {
+            "C:\\Girraphic\\F1\\Data\\2024_AUS_SAI_Q3.csv",
+            "C:\\Girraphic\\F1\\Data\\2024_AUS_VER_Q3.csv"
+        };
+        for (int i = 0; i < 2; i++)
+        {
+            // Read telemetry data from file
+            m_telemetryData[i].readTelemetry(fileNames[i]); // Read telemetry data from file
+            m_telemetryData[i].normalizeCoordinates(); // Normalize the coordinates
+            m_vertexBufferSize[i] = m_telemetryData[i].getSize();
+            Vertex* triangleVertices = new Vertex[m_vertexBufferSize[i]];
+            m_telemetryData[i].copyToVertexBuffer(triangleVertices, colors[i]); // Copy the normalized coordinates to the vertex buffer
 
-        const UINT vertexBufferSize = sizeof(triangleVertices);
+            //const UINT vertexBufferSize = m_vertexBufferSize[i] * 7 * 4;
 
-        // Note: using upload heaps to transfer static data like vert buffers is not 
-        // recommended. Every time the GPU needs it, the upload heap will be marshalled 
-        // over. Please read up on Default Heap usage. An upload heap is used here for 
-        // code simplicity and because there are very few verts to actually transfer.
-        ThrowIfFailed(m_device->CreateCommittedResource(
-            &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
-            D3D12_HEAP_FLAG_NONE,
-            &CD3DX12_RESOURCE_DESC::Buffer(vertexBufferSize),
-            D3D12_RESOURCE_STATE_GENERIC_READ,
-            nullptr,
-            IID_PPV_ARGS(&m_vertexBuffer)));
+            // Note: using upload heaps to transfer static data like vert buffers is not 
+            // recommended. Every time the GPU needs it, the upload heap will be marshalled 
+            // over. Please read up on Default Heap usage. An upload heap is used here for 
+            // code simplicity and because there are very few verts to actually transfer.
+            ThrowIfFailed(m_device->CreateCommittedResource(
+                &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
+                D3D12_HEAP_FLAG_NONE,
+                &CD3DX12_RESOURCE_DESC::Buffer(m_vertexBufferSize[i] * 7 * 4),
+                D3D12_RESOURCE_STATE_GENERIC_READ,
+                nullptr,
+                IID_PPV_ARGS(&m_vertexBuffer[i])));
 
-        // Copy the triangle data to the vertex buffer.
-        UINT8* pVertexDataBegin;
-        CD3DX12_RANGE readRange(0, 0);        // We do not intend to read from this resource on the CPU.
-        ThrowIfFailed(m_vertexBuffer->Map(0, &readRange, reinterpret_cast<void**>(&pVertexDataBegin)));
-        memcpy(pVertexDataBegin, triangleVertices, sizeof(triangleVertices));
-        m_vertexBuffer->Unmap(0, nullptr);
+            // Copy the triangle data to the vertex buffer.
+            UINT8* pVertexDataBegin;
+            CD3DX12_RANGE readRange(0, 0);        // We do not intend to read from this resource on the CPU.
+            ThrowIfFailed(m_vertexBuffer[i]->Map(0, &readRange, reinterpret_cast<void**>(&pVertexDataBegin)));
+            memcpy(pVertexDataBegin, triangleVertices, m_vertexBufferSize[i] * 7 * 4);
+            m_vertexBuffer[i]->Unmap(0, nullptr);
 
-        // Initialize the vertex buffer view.
-        m_vertexBufferView.BufferLocation = m_vertexBuffer->GetGPUVirtualAddress();
-        m_vertexBufferView.StrideInBytes = sizeof(Vertex);
-        m_vertexBufferView.SizeInBytes = vertexBufferSize;
+            // Initialize the vertex buffer view.
+            m_vertexBufferView[i].BufferLocation = m_vertexBuffer[i]->GetGPUVirtualAddress();
+            m_vertexBufferView[i].StrideInBytes = sizeof(Vertex);
+            m_vertexBufferView[i].SizeInBytes = m_vertexBufferSize[i] * 7 * 4;
+            delete[] triangleVertices;
+        }
     }
+
 
     // Create synchronization objects and wait until assets have been uploaded to the GPU.
     {
@@ -283,6 +301,7 @@ void D3D12HelloTriangle::OnDestroy()
 
 void D3D12HelloTriangle::PopulateCommandList()
 {
+	static int startIndex = 0;
     // Command list allocators can only be reset when the associated 
     // command lists have finished execution on the GPU; apps should use 
     // fences to determine GPU execution progress.
@@ -295,7 +314,27 @@ void D3D12HelloTriangle::PopulateCommandList()
 
     // Set necessary state.
     m_commandList->SetGraphicsRootSignature(m_rootSignature.Get());
-    m_commandList->RSSetViewports(1, &m_viewport);
+    
+	// get the telemetry data from the first file at startindex
+    TelemetryData data = m_telemetryData[0].getTelemetry(startIndex);
+    
+
+	// adjust the viewport
+
+    CD3DX12_VIEWPORT viewport = m_viewport;
+    //viewport.TopLeftX -= data.NormalizedEast * m_viewport.Width / 2; // -m_viewport.Width / 2;
+    //viewport.TopLeftY += data.NormalizedNorth * m_viewport.Height / 2.; // -m_viewport.Height / 2;
+    //viewport.TopLeftX -= data.NormalizedEast * m_width / 2.; // m_viewport.Width / 2; // -m_viewport.Width / 2;
+    //viewport.TopLeftY += data.NormalizedNorth * m_height / 2.; // m_viewport.Height / 2.; // -m_viewport.Height / 2;
+
+
+    m_scissorRect.left = static_cast<LONG>(viewport.TopLeftX);
+    m_scissorRect.top = static_cast<LONG>(viewport.TopLeftY);
+    m_scissorRect.right = static_cast<LONG>(viewport.Width);
+    m_scissorRect.bottom = static_cast<LONG>(viewport.Height);
+
+
+    m_commandList->RSSetViewports(1, &viewport);
     m_commandList->RSSetScissorRects(1, &m_scissorRect);
 
     // Indicate that the back buffer will be used as a render target.
@@ -305,11 +344,24 @@ void D3D12HelloTriangle::PopulateCommandList()
     m_commandList->OMSetRenderTargets(1, &rtvHandle, FALSE, nullptr);
 
     // Record commands.
-    const float clearColor[] = { 0.0f, 0.2f, 0.4f, 1.0f };
+    const float clearColor[] = { 0.0f, 0.0f, 0.0f, 1.0f };
     m_commandList->ClearRenderTargetView(rtvHandle, clearColor, 0, nullptr);
-    m_commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    m_commandList->IASetVertexBuffers(0, 1, &m_vertexBufferView);
-    m_commandList->DrawInstanced(3, 1, 0, 0);
+//    m_commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+    m_commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_POINTLIST);
+    m_commandList->IASetVertexBuffers(0, 1, &m_vertexBufferView[0]);
+    m_commandList->DrawInstanced(m_vertexBufferSize[0], 1, 0, 0);
+
+
+	for (int i = 1; i < 2; i++)
+	{
+		m_commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_POINTLIST);
+		m_commandList->IASetVertexBuffers(0, 1, &m_vertexBufferView[i]);
+		m_commandList->DrawInstanced(min(m_maxVertices, m_vertexBufferSize[i]), 1, startIndex, 0);
+	}
+    startIndex++;
+    if (startIndex > 3700)
+        startIndex = 0;
 
     // Indicate that the back buffer will now be used to present.
     m_commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_renderTargets[m_frameIndex].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT));
@@ -337,4 +389,56 @@ void D3D12HelloTriangle::WaitForPreviousFrame()
     }
 
     m_frameIndex = m_swapChain->GetCurrentBackBufferIndex();
+    Sleep(20);
+}
+void D3D12HelloTriangle::OnMouseWheel(int zDelta, short keyFlags)
+{
+    if (keyFlags & MK_SHIFT) {
+        // Adjust viewport X (horizontal scroll with SHIFT held)
+        m_viewport.TopLeftX += (zDelta > 0) ? -m_viewport.Width * 0.01 : m_viewport.Width * 0.01;
+    }
+    else if (keyFlags & MK_CONTROL) {
+        if (zDelta > 0)
+        {
+            m_viewport.TopLeftX -= m_viewport.Width * 0.05;
+            m_viewport.TopLeftY -= m_viewport.Height * 0.05;
+            m_viewport.Width *= 1.1;
+            m_viewport.Height *= 1.1;
+        }
+        else
+        {
+            m_viewport.Width /= 1.1;
+            m_viewport.Height /= 1.1;
+            m_viewport.TopLeftX += m_viewport.Width * 0.05;
+            m_viewport.TopLeftY += m_viewport.Height * 0.05;
+        }
+    }
+    else {
+        // Adjust viewport Y (vertical scroll without modifiers)
+        m_viewport.TopLeftY += (zDelta < 0) ? -m_viewport.Height * 0.01 : m_viewport.Height * 0.01f;
+    }
+
+	m_scissorRect.left = static_cast<LONG>(m_viewport.TopLeftX);
+	m_scissorRect.top = static_cast<LONG>(m_viewport.TopLeftY);
+	m_scissorRect.right = static_cast<LONG>(m_viewport.Width);
+	m_scissorRect.bottom = static_cast<LONG>(m_viewport.Height);
+}
+
+void D3D12HelloTriangle::OnKeyDown(UINT8 key)
+{
+    switch (key)
+    {
+    case VK_LEFT:
+        m_viewport.TopLeftX -= 10;
+        break;
+    case VK_RIGHT:
+        m_viewport.TopLeftX += 10;
+        break;
+    case VK_UP:
+        m_maxVertices += 100;
+        break;
+    case VK_DOWN:
+        m_maxVertices -= 100;
+        break;
+    }
 }

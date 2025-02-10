@@ -108,6 +108,11 @@ LRESULT CALLBACK Win32Application::WindowProc(HWND hWnd, UINT message, WPARAM wP
             pSample->OnRender();
         }
         return 0;
+    case WM_MOUSEWHEEL: {
+        int zDelta = GET_WHEEL_DELTA_WPARAM(wParam);
+		pSample->OnMouseWheel(zDelta);
+        break;
+    }
 
     case WM_DESTROY:
         PostQuitMessage(0);

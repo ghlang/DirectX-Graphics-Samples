@@ -12,6 +12,8 @@
 #pragma once
 
 #include "DXSample.h"
+#include "TelemetryDataCollection.h"
+
 
 using namespace DirectX;
 
@@ -31,15 +33,19 @@ public:
     virtual void OnUpdate();
     virtual void OnRender();
     virtual void OnDestroy();
-
-private:
-    static const UINT FrameCount = 2;
-
+	void OnKeyDown(UINT8 key);
+	void OnMouseWheel(int zDelta, short keyFlags);
     struct Vertex
     {
         XMFLOAT3 position;
         XMFLOAT4 color;
     };
+
+private:
+    static const UINT FrameCount = 2;
+    int m_width;
+	int m_height;
+
 
     // Pipeline objects.
     CD3DX12_VIEWPORT m_viewport;
@@ -56,14 +62,22 @@ private:
     UINT m_rtvDescriptorSize;
 
     // App resources.
-    ComPtr<ID3D12Resource> m_vertexBuffer;
-    D3D12_VERTEX_BUFFER_VIEW m_vertexBufferView;
+    TelemetryDataCollection m_telemetryData[10];
+
+    ComPtr<ID3D12Resource> m_vertexBuffer[10];
+    D3D12_VERTEX_BUFFER_VIEW m_vertexBufferView[10];
+	int m_vertexBufferSize[10];
+    int m_maxVertices;
+
+
+
 
     // Synchronization objects.
     UINT m_frameIndex;
     HANDLE m_fenceEvent;
     ComPtr<ID3D12Fence> m_fence;
     UINT64 m_fenceValue;
+
 
     void LoadPipeline();
     void LoadAssets();
