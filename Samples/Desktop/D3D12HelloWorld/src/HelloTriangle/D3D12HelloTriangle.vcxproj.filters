@@ -31,6 +31,10 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="TelemetryDataCollection.h" />
+    <ClInclude Include="Car.h" />
+    <ClInclude Include="GeomObjects.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">
@@ -49,6 +53,7 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="TelemetryDataCollection.cpp" />
+    <ClCompile Include="Car.cpp" />
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="shaders.hlsl">

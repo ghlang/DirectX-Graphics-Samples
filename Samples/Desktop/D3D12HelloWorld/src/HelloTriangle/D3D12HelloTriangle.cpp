@@ -211,14 +211,36 @@ void D3D12HelloTriangle::LoadAssets()
             "C:\\Girraphic\\F1\\Data\\2024_AUS_SAI_Q3.csv",
             "C:\\Girraphic\\F1\\Data\\2024_AUS_VER_Q3.csv"
         };
-        for (int i = 0; i < 2; i++)
+		Vertex3D minPoint = Vertex3D(std::numeric_limits<double>::max(), std::numeric_limits<double>::max(), 0.0f);
+		Vertex3D maxPoint = Vertex3D(std::numeric_limits<double>::min(), std::numeric_limits<double>::min(), 0.0f);
+		for (int i = 0; i < 2; i++)
         {
             // Read telemetry data from file
-            m_telemetryData[i].readTelemetry(fileNames[i]); // Read telemetry data from file
-            m_telemetryData[i].normalizeCoordinates(); // Normalize the coordinates
+            m_telemetryData[i].readTelemetry(fileNames[i], DirectX::XMFLOAT4(0.0f, 1.0f, 0.0f, 1.0f)); // Read telemetry data from file
+			Vertex3D minTD = m_telemetryData[i].getMinPoint();
+			Vertex3D maxTD = m_telemetryData[i].getMaxPoint();
+            if (minPoint.x > minTD.x) minPoint.x = minTD.x;
+            if (maxPoint.x < maxTD.x) maxPoint.x = maxTD.x;
+            if (minPoint.y > minTD.y) minPoint.y = minTD.y;
+            if (maxPoint.y < maxTD.y) maxPoint.y = maxTD.y;
+        }
+//		m_telemetryData[0].checkForIntersections(m_telemetryData[1]); // Check for intersections between the two files
+
+		for (int i = 0; i < 2; i++)
+		{
             m_vertexBufferSize[i] = m_telemetryData[i].getSize();
             Vertex* triangleVertices = new Vertex[m_vertexBufferSize[i]];
-            m_telemetryData[i].copyToVertexBuffer(triangleVertices, colors[i]); // Copy the normalized coordinates to the vertex buffer
+			for (int j = 0; j < m_vertexBufferSize[i]; j++)
+			{
+				Vertex3D point = m_telemetryData[i].getTelemetry(j).UTMPosition;
+                point -= minPoint;
+				point /= (maxPoint - minPoint);
+				point += Vertex3D(-0.5, -0.5, 0.0);
+                point.z = 0.0f;
+                triangleVertices[j].position = point;
+				triangleVertices[j].color = colors[i];
+			}
+            //m_telemetryData[i].copyToVertexBuffer(triangleVertices, colors[i]); // Copy the normalized coordinates to the vertex buffer
 
             //const UINT vertexBufferSize = m_vertexBufferSize[i] * 7 * 4;
 
@@ -348,6 +370,15 @@ void D3D12HelloTriangle::PopulateCommandList()
     m_commandList->ClearRenderTargetView(rtvHandle, clearColor, 0, nullptr);
 //    m_commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
+    
+	for (int i = 0; i < 1; i++)
+	{
+//        m_commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_POINTLIST);
+        m_commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_LINESTRIP);
+		m_commandList->IASetVertexBuffers(0, 1, &m_vertexBufferView[i]);
+		m_commandList->DrawInstanced(m_vertexBufferSize[i], 1, 0, 0);
+	}
+/*
     m_commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_POINTLIST);
     m_commandList->IASetVertexBuffers(0, 1, &m_vertexBufferView[0]);
     m_commandList->DrawInstanced(m_vertexBufferSize[0], 1, 0, 0);
@@ -359,6 +390,7 @@ void D3D12HelloTriangle::PopulateCommandList()
 		m_commandList->IASetVertexBuffers(0, 1, &m_vertexBufferView[i]);
 		m_commandList->DrawInstanced(min(m_maxVertices, m_vertexBufferSize[i]), 1, startIndex, 0);
 	}
+    */
     startIndex++;
     if (startIndex > 3700)
         startIndex = 0;
@@ -395,7 +427,7 @@ void D3D12HelloTriangle::OnMouseWheel(int zDelta, short keyFlags)
 {
     if (keyFlags & MK_SHIFT) {
         // Adjust viewport X (horizontal scroll with SHIFT held)
-        m_viewport.TopLeftX += (zDelta > 0) ? -m_viewport.Width * 0.01 : m_viewport.Width * 0.01;
+        m_viewport.TopLeftX += (zDelta < 0) ? -m_viewport.Width * 0.01 : m_viewport.Width * 0.01;
     }
     else if (keyFlags & MK_CONTROL) {
         if (zDelta > 0)

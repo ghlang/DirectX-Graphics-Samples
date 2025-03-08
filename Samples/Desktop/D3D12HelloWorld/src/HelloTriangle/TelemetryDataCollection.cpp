@@ -1,65 +1,110 @@
 #include "stdafx.h" 
-#define NOMINMAX
-#include <limits>
-#include <algorithm>
 #include "TelemetryDataCollection.h"
 #include "D3D12HelloTriangle.h"
 
-// Undefine the conflicting macros
-#ifdef max
-#undef max
-#endif
 
-#ifdef min
-#undef min
-#endif
 
-void TelemetryDataCollection::normalizeCoordinates()
+
+
+void TelemetryDataCollection::checkBoundaries()
 {
-	double minEast = std::numeric_limits<double>::max();
-	double maxEast = std::numeric_limits<double>::min();
-	double minNorth = std::numeric_limits<double>::max();
-	double maxNorth = std::numeric_limits<double>::min();
-	auto last = data[0];
-	auto curr = data[0];
+	// check for each data element that is within boundaries using boost's intersection function	
+	// if not, print a warning	
+
 	for (const auto& pair : data) {
-		curr = pair.second;
-		minEast = std::min(minEast, pair.second.UTMEast);
-		maxEast = std::max(maxEast, pair.second.UTMEast);
-		minNorth = std::min(minNorth, pair.second.UTMNorth);
-		maxNorth = std::max(maxNorth, pair.second.UTMNorth);
-		double dEast = last.UTMEast - curr.UTMEast;
-		double dNorth = last.UTMNorth - curr.UTMNorth;
-		double dist = sqrt(dEast * dEast + dNorth * dNorth);
-		if (dist < 0.01) {
-			continue;
-		}
-		double vel = dist / 0.02; //curr.TimeStamp - last.TimeStamp);
-		// convert meters/second to km/h
-		vel *= 3.6;
-		double phi = atan2(dNorth, dEast);
-		// convert to degrees
-		last = curr;
+		// check if the data is within the boundaries
+		namespace bg = boost::geometry;
+		using Point2D = bg::model::point<float, 2, bg::cs::cartesian>;
+		using Segment = bg::model::segment<Point2D>;
+		Segment seg1(Point2D(0, 0), Point2D(4, 4));
+
 	}
-	double diffEast = maxEast - minEast;
-	double diffNorth = maxNorth - minNorth;
-	for (auto& pair : data) {
-		pair.second.NormalizedEast = (pair.second.UTMEast - minEast) / (maxEast - minEast)-0.5;
-		pair.second.NormalizedNorth = (pair.second.UTMNorth - minNorth) / (maxNorth - minNorth)-0.5;
-	}
+
 }
 
-void TelemetryDataCollection::copyToVertexBuffer(void* buffer, DirectX::XMFLOAT4 color)
+void TelemetryDataCollection::checkForIntersections(TelemetryDataCollection& compareCollection)
 {
-	D3D12HelloTriangle::Vertex* vertexBuffer = reinterpret_cast<D3D12HelloTriangle::Vertex*>(buffer);
-	for (const auto& pair : data) {
-		vertexBuffer->position.x = static_cast<float>(pair.second.NormalizedEast);
-		vertexBuffer->position.y = static_cast<float>(pair.second.NormalizedNorth);
-		vertexBuffer->position.z = 0.0f;
-		vertexBuffer->color.x = color.x;
-		vertexBuffer->color.y = color.y;
-		vertexBuffer->color.z = color.z;
-		vertexBuffer->color.w = color.w;
-		vertexBuffer++;
+	// check for each data element that is within boundaries using boost's intersection function	
+	// if not, print a warning	
+	Vertex3D lastPoint;
+	Vertex3D currPoint;
+	double currTimeStamp;
+	bool first = true;
+	int ind = 0;
+	const double frontTrack = 1.6f;
+	for (auto& pair : data) {
+		currPoint = pair.second.UTMPosition;
+		currTimeStamp = pair.first;
+		// skip if this is the first point
+		if (first) {
+			lastPoint = currPoint;
+			first = false;
+			ind++;
+			continue;
+		}
+
+		// calculate the distance between the last and current point
+		double dxs = lastPoint.x - currPoint.x;
+		double dys = lastPoint.y - currPoint.y;
+		double dist = sqrt(dxs * dxs + dys * dys);
+		// normalize dx and dy
+		double dxsn = dxs / dist;
+		double dysn = dys / dist;
+		// calculate the vector perpendicular to the track using frontTrack
+		double dxp = -dysn * frontTrack / 2.0f;
+		double dyp = dxsn * frontTrack / 2.0f;
+		// calculate the points for the left and right wheel
+		Vertex3D leftWheel;
+		Vertex3D rightWheel;
+		leftWheel.x = currPoint.x + dxp;
+		leftWheel.y = currPoint.y + dyp;
+		rightWheel.x = currPoint.x - dxp;
+		rightWheel.y = currPoint.y - dyp;
+		// define a segement between the left and right wheel
+		Segment segl((Point2D) currPoint, (Point2D) leftWheel);
+		Segment segr((Point2D) currPoint, (Point2D) rightWheel);
+
+		dist = bg::distance((Point2D)lastPoint, (Point2D)currPoint);
+
+		// check if this segment is interescting with any segment of the compareCollection. If so print a warning and exit this loop
+		Vertex3D compareLastPoint;
+		Vertex3D compareCurrPoint;
+		bool compareFirst = true;
+        
+		
+		int imatch = compareCollection.getClosestIndex(currTimeStamp);
+
+		for (const auto& comparePair : compareCollection.data) {
+			compareCurrPoint = comparePair.second.UTMPosition;
+			// skip if this is the first point
+			if (compareFirst || bg::distance((Point2D)compareCurrPoint, (Point2D)currPoint) > 10.f) {
+				compareLastPoint = compareCurrPoint;
+				compareFirst = false;
+				continue;
+			}
+			// define a segment from the last point to the current point
+			Segment seg2((Point2D) compareLastPoint, (Point2D) compareCurrPoint);
+			// return a list of points where the segment intersects with the boundaries
+			std::vector<Point2D> intersection_points;
+			bg::intersection(segl, seg2,intersection_points);
+			if (!intersection_points.empty()) {
+				dist = bg::distance(intersection_points[0], (Point2D) currPoint);
+				if (dist > 0.2f) {
+//					pair.second.Color = DirectX::XMFLOAT4(1.0f, 0.0f, 0.0f, 1.0f);
+					break;
+				}
+			}
+			bg::intersection(segr, seg2, intersection_points);
+			if (!intersection_points.empty()) {
+				dist = bg::distance(intersection_points[0], (Point2D)currPoint);
+				if (dist > 0.2f) {
+//					pair.second.Color = DirectX::XMFLOAT4(0.0f, 0.0f, 1.0f, 1.0f);
+					break;
+				}
+			}
+			compareLastPoint = compareCurrPoint;
+		}
+		lastPoint = currPoint;
+		ind++;
 	}
 }
